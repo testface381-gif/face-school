@@ -130,3 +130,17 @@ For real school use:
 - Change the default admin password.
 - Use a strong SECRET_KEY.
 - Use HTTPS only.
+
+## Accuracy Safety Update
+This version uses a stricter OpenCV LBPH verification process:
+- Default confidence threshold changed to 45. Lower confidence is better.
+- Requires at least 3 successful matches from 5 camera frames.
+- Rejects blurry, too-dark, or overexposed images.
+- Rejects uncertain matches when the best match is too close to the second-best teacher.
+
+Recommended Railway variables:
+- `FACE_CONFIDENCE_THRESHOLD=45`
+- `FACE_MARGIN_THRESHOLD=12`
+- `FACE_REQUIRED_MATCHES=3`
+
+For best results, upload 3–5 clear photos per teacher.

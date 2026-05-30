@@ -10,12 +10,27 @@ function showResult(ok, message){
   result.textContent = message;
 }
 
+function sleep(ms){
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function captureFrame(){
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const context = canvas.getContext('2d');
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
 startBtn.addEventListener('click', async () => {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
     video.srcObject = stream;
     captureBtn.disabled = false;
-    showResult(true, 'Camera started. Look at the camera and press Verify Face.');
+    showResult(true, 'Camera started. Look directly at the camera. The system will check several frames for higher accuracy.');
   } catch (error) {
     showResult(false, 'Camera permission failed. Please allow camera access and use HTTPS.');
   }
@@ -24,17 +39,19 @@ startBtn.addEventListener('click', async () => {
 captureBtn.addEventListener('click', async () => {
   if (!stream) return;
   captureBtn.disabled = true;
-  showResult(true, 'Processing face. Please wait...');
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  const context = canvas.getContext('2d');
-  context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const image = canvas.toDataURL('image/jpeg', 0.9);
+  showResult(true, 'Processing multiple face checks. Please keep looking at the camera...');
+
+  const images = [];
   try {
+    for (let i = 0; i < 5; i++) {
+      images.push(captureFrame());
+      await sleep(250);
+    }
+
     const response = await fetch('/api/attendance', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: captureBtn.dataset.action, image })
+      body: JSON.stringify({ action: captureBtn.dataset.action, images })
     });
     const data = await response.json();
     showResult(Boolean(data.ok), data.message || 'Unknown response.');

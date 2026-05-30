@@ -3,14 +3,14 @@
 <section class="camera-panel">
   <p class="eyebrow">Teacher Attendance</p>
   <h1>{{ 'Sign In' if action == 'in' else 'Sign Out' }}</h1>
-  <p class="lead">Press start camera, look directly at the laptop camera, then press verify.</p>
+  <p class="lead">Press start camera, look directly at the laptop camera, then press verify. The system now checks multiple frames and rejects weak/uncertain matches for better safety.</p>
   <div class="camera-box">
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas" hidden></canvas>
   </div>
   <div class="actions center">
     <button class="btn secondary" id="startBtn">Start Camera</button>
-    <button class="btn primary" id="captureBtn" data-action="{{ action }}" disabled>Verify Face</button>
+    <button class="btn primary" id="captureBtn" data-action="{{ action }}" disabled>Verify Face Securely</button>
   </div>
   <div id="result" class="result"></div>
 </section>

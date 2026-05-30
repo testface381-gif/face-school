@@ -35,7 +35,10 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
-FACE_CONFIDENCE_THRESHOLD = int(os.environ.get("FACE_CONFIDENCE_THRESHOLD", "75"))
+FACE_CONFIDENCE_THRESHOLD = int(os.environ.get("FACE_CONFIDENCE_THRESHOLD", "45"))
+FACE_MARGIN_THRESHOLD = int(os.environ.get("FACE_MARGIN_THRESHOLD", "12"))
+FACE_REQUIRED_MATCHES = int(os.environ.get("FACE_REQUIRED_MATCHES", "3"))
+
 
 
 db = SQLAlchemy(app)
@@ -118,14 +121,24 @@ def decode_camera_image(data_url):
     return base64.b64decode(encoded)
 
 
-def collect_training_faces():
-    faces = []
-    labels = []
-    label_to_teacher = {}
+def face_quality_ok(face):
+    """Basic quality gate to reduce false matches from blurry/dark camera frames."""
+    blur_score = cv2.Laplacian(face, cv2.CV_64F).var()
+    brightness = float(np.mean(face))
+    if blur_score < 45:
+        return False, "Face image is too blurry. Please hold still and improve focus."
+    if brightness < 45:
+        return False, "Face image is too dark. Please improve lighting."
+    if brightness > 220:
+        return False, "Face image is overexposed. Please reduce strong light."
+    return True, "OK"
+
+
+def collect_teacher_faces():
+    teacher_faces = []
     teachers = Teacher.query.order_by(Teacher.name.asc()).all()
-    label = 0
     for teacher in teachers:
-        teacher_faces = []
+        faces = []
         for img in teacher.images:
             path = os.path.join(teacher_folder(teacher.id), img.filename)
             if not os.path.exists(path):
@@ -135,37 +148,92 @@ def collect_training_faces():
                     gray = image_to_gray_array(f.read())
                 face = detect_largest_face(gray)
                 if face is not None:
-                    teacher_faces.append(face)
+                    faces.append(face)
             except Exception:
                 continue
-        if teacher_faces:
-            label_to_teacher[label] = teacher
-            for face in teacher_faces:
-                faces.append(face)
-                labels.append(label)
-            label += 1
-    return faces, labels, label_to_teacher
+        if faces:
+            teacher_faces.append((teacher, faces))
+    return teacher_faces
 
 
-def recognize_teacher(image_bytes):
+def recognize_single_frame(image_bytes):
     captured_gray = image_to_gray_array(image_bytes)
     captured_face = detect_largest_face(captured_gray)
     if captured_face is None:
         return None, None, "No clear face detected. Please face the camera with good lighting."
 
-    faces, labels, label_to_teacher = collect_training_faces()
-    if not faces:
+    quality_ok, quality_message = face_quality_ok(captured_face)
+    if not quality_ok:
+        return None, None, quality_message
+
+    teacher_faces = collect_teacher_faces()
+    if not teacher_faces:
         return None, None, "No trained teacher images found. Admin must upload teacher photos first."
 
-    recognizer = cv2.face.LBPHFaceRecognizer_create(radius=1, neighbors=8, grid_x=8, grid_y=8)
-    recognizer.train(faces, np.array(labels))
-    predicted_label, confidence = recognizer.predict(captured_face)
-    teacher = label_to_teacher.get(predicted_label)
+    scores = []
+    for teacher, faces in teacher_faces:
+        if len(faces) < 2:
+            # one image is not enough for reliable recognition; still test it but with caution
+            pass
+        recognizer = cv2.face.LBPHFaceRecognizer_create(radius=1, neighbors=8, grid_x=8, grid_y=8)
+        recognizer.train(faces, np.zeros(len(faces), dtype=np.int32))
+        _, confidence = recognizer.predict(captured_face)
+        scores.append((float(confidence), teacher))
 
-    if teacher is None or confidence > FACE_CONFIDENCE_THRESHOLD:
-        return None, float(confidence), "Face not confidently matched. Please try again or ask admin to upload clearer photos."
+    if not scores:
+        return None, None, "No usable teacher face images found."
 
-    return teacher, float(confidence), "Matched successfully."
+    scores.sort(key=lambda item: item[0])
+    best_confidence, best_teacher = scores[0]
+    second_confidence = scores[1][0] if len(scores) > 1 else 999.0
+    margin = second_confidence - best_confidence
+
+    if best_confidence > FACE_CONFIDENCE_THRESHOLD:
+        return None, best_confidence, "Face not confidently matched. Please try again or ask admin to upload clearer photos."
+
+    if len(scores) > 1 and margin < FACE_MARGIN_THRESHOLD:
+        return None, best_confidence, "Face is too similar to another saved teacher photo. Match rejected for safety. Please try again with better lighting."
+
+    return best_teacher, best_confidence, "Matched successfully."
+
+
+def recognize_teacher(image_bytes):
+    return recognize_single_frame(image_bytes)
+
+
+def recognize_teacher_from_frames(image_list):
+    successful = []
+    last_message = "No face matched."
+    last_confidence = None
+
+    for data_url in image_list:
+        try:
+            teacher, confidence, message = recognize_single_frame(decode_camera_image(data_url))
+            last_message = message
+            last_confidence = confidence
+            if teacher:
+                successful.append((teacher.id, teacher, confidence))
+        except Exception as exc:
+            last_message = f"Processing error: {exc}"
+
+    if not successful:
+        return None, last_confidence, last_message
+
+    counts = {}
+    teachers = {}
+    confidences = {}
+    for teacher_id, teacher, confidence in successful:
+        counts[teacher_id] = counts.get(teacher_id, 0) + 1
+        teachers[teacher_id] = teacher
+        confidences.setdefault(teacher_id, []).append(confidence)
+
+    best_teacher_id = max(counts, key=counts.get)
+    required = max(1, FACE_REQUIRED_MATCHES)
+    if counts[best_teacher_id] < required:
+        return None, None, f"Verification rejected for safety. Needed {required} matching frames, got {counts[best_teacher_id]}. Please try again."
+
+    avg_confidence = sum(confidences[best_teacher_id]) / len(confidences[best_teacher_id])
+    return teachers[best_teacher_id], float(avg_confidence), "Matched successfully across multiple frames."
 
 
 def today_record_for(teacher):
@@ -301,8 +369,12 @@ def api_attendance():
     if action not in {"in", "out"}:
         return jsonify({"ok": False, "message": "Invalid attendance action."}), 400
     try:
-        image_bytes = decode_camera_image(payload.get("image"))
-        teacher, confidence, message = recognize_teacher(image_bytes)
+        images = payload.get("images")
+        if isinstance(images, list) and images:
+            teacher, confidence, message = recognize_teacher_from_frames(images)
+        else:
+            image_bytes = decode_camera_image(payload.get("image"))
+            teacher, confidence, message = recognize_teacher(image_bytes)
         if not teacher:
             return jsonify({"ok": False, "message": message, "confidence": confidence})
         record = today_record_for(teacher)
