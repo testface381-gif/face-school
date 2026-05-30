@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="camera-panel">
+  <p class="eyebrow">Teacher Attendance</p>
+  <h1>{{ 'Sign In' if action == 'in' else 'Sign Out' }}</h1>
+  <p class="lead">Press start camera, look directly at the laptop camera, then press verify.</p>
+  <div class="camera-box">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" hidden></canvas>
+  </div>
+  <div class="actions center">
+    <button class="btn secondary" id="startBtn">Start Camera</button>
+    <button class="btn primary" id="captureBtn" data-action="{{ action }}" disabled>Verify Face</button>
+  </div>
+  <div id="result" class="result"></div>
+</section>
+<script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+{% endblock %}

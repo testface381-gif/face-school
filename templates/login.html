@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="auth-card">
+  <h2>Admin Login</h2>
+  <p class="muted">Default: admin / 1234. Change it later for production.</p>
+  <form method="post" class="form">
+    <label>Username</label>
+    <input name="username" required autocomplete="username">
+    <label>Password</label>
+    <input name="password" type="password" required autocomplete="current-password">
+    <button class="btn primary" type="submit">Login</button>
+  </form>
+</div>
+{% endblock %}

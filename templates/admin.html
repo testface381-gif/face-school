@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">Admin Panel</p><h1>Teacher Management</h1></div>
+  <a class="btn secondary" href="{{ url_for('reports') }}">Open Reports</a>
+</div>
+<div class="grid two">
+  <section class="panel">
+    <h2>Add / Update Teacher</h2>
+    <form method="post" action="{{ url_for('add_teacher') }}" enctype="multipart/form-data" class="form">
+      <label>Teacher Name</label>
+      <input name="name" required placeholder="Example: Ahmed Ali">
+      <label>Department / Subject</label>
+      <input name="department" placeholder="Example: Mathematics">
+      <label>Teacher Photos</label>
+      <input type="file" name="photos" accept="image/*" multiple required>
+      <p class="hint">Upload 2–5 clear front-face photos for best accuracy.</p>
+      <button class="btn primary" type="submit">Save Teacher</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Today Summary</h2>
+    <div class="summary-list">
+      {% for record in records_today %}
+      <div class="summary-item">
+        <strong>{{ record.teacher.name }}</strong>
+        <span>In: {{ record.sign_in_time.strftime('%H:%M') if record.sign_in_time else '-' }} | Out: {{ record.sign_out_time.strftime('%H:%M') if record.sign_out_time else '-' }}</span>
+      </div>
+      {% else %}
+      <p class="muted">No attendance records today yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+<section class="panel">
+  <h2>Registered Teachers</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Department</th><th>Photos</th><th>Created</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for teacher in teachers %}
+        <tr>
+          <td>{{ teacher.name }}</td>
+          <td>{{ teacher.department or '-' }}</td>
+          <td>{{ teacher.images|length }}</td>
+          <td>{{ teacher.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>
+            <form method="post" action="{{ url_for('delete_teacher', teacher_id=teacher.id) }}" onsubmit="return confirm('Delete this teacher and all records?')">
+              <button class="btn danger small" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5">No teachers yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

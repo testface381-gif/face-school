@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">AI-powered school attendance</p>
+    <h1>Fast, professional teacher sign-in and sign-out by face recognition.</h1>
+    <p class="lead">Teachers use the laptop camera. Admin uploads teacher photos and exports advanced Excel reports.</p>
+    <div class="actions">
+      <a class="btn primary" href="{{ url_for('attendance_page', action='in') }}">Teacher Sign In</a>
+      <a class="btn secondary" href="{{ url_for('attendance_page', action='out') }}">Teacher Sign Out</a>
+    </div>
+  </div>
+  <div class="stat-card">
+    <span class="stat-number">{{ teacher_count }}</span>
+    <span class="stat-label">registered teachers</span>
+  </div>
+</section>
+<section class="cards">
+  <div class="card"><h3>Secure Admin</h3><p>Admin manages teacher images and professional reports.</p></div>
+  <div class="card"><h3>Camera Workflow</h3><p>Browser camera captures a live photo and checks it against saved faces.</p></div>
+  <div class="card"><h3>Excel Export</h3><p>Filter by teacher, date, missing sign-in, missing sign-out, or complete records.</p></div>
+</section>
+{% endblock %}

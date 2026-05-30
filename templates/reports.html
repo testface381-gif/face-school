@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">Admin Reports</p><h1>Advanced Attendance Reports</h1></div>
+  <a class="btn primary" href="{{ url_for('export_report', **filters) }}">Download Excel</a>
+</div>
+<section class="panel">
+  <form class="filters" method="get">
+    <div><label>Teacher</label><select name="teacher_id"><option value="">All</option>{% for teacher in teachers %}<option value="{{ teacher.id }}" {% if filters.get('teacher_id')|string == teacher.id|string %}selected{% endif %}>{{ teacher.name }}</option>{% endfor %}</select></div>
+    <div><label>Start Date</label><input type="date" name="start_date" value="{{ filters.get('start_date','') }}"></div>
+    <div><label>End Date</label><input type="date" name="end_date" value="{{ filters.get('end_date','') }}"></div>
+    <div><label>Status</label><select name="status"><option value="all">All</option><option value="not_signed_in" {% if filters.get('status') == 'not_signed_in' %}selected{% endif %}>Not signed in</option><option value="not_signed_out" {% if filters.get('status') == 'not_signed_out' %}selected{% endif %}>Not signed out</option><option value="complete" {% if filters.get('status') == 'complete' %}selected{% endif %}>Complete</option></select></div>
+    <button class="btn secondary" type="submit">Apply Filters</button>
+  </form>
+</section>
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Teacher</th><th>Department</th><th>Sign In</th><th>Sign Out</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
+          <td>{{ r.teacher.name }}</td>
+          <td>{{ r.teacher.department or '-' }}</td>
+          <td>{{ r.sign_in_time.strftime('%H:%M:%S') if r.sign_in_time else '-' }}</td>
+          <td>{{ r.sign_out_time.strftime('%H:%M:%S') if r.sign_out_time else '-' }}</td>
+          <td>{% if r.status == 'Not signed in' %}<span class="badge warn">Not signed in</span>{% elif r.status == 'Not signed out' %}<span class="badge info">Not signed out</span>{% else %}<span class="badge ok">Complete</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">No records found for selected filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
