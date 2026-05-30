@@ -38,6 +38,9 @@ ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 FACE_CONFIDENCE_THRESHOLD = int(os.environ.get("FACE_CONFIDENCE_THRESHOLD", "45"))
 FACE_MARGIN_THRESHOLD = int(os.environ.get("FACE_MARGIN_THRESHOLD", "12"))
 FACE_REQUIRED_MATCHES = int(os.environ.get("FACE_REQUIRED_MATCHES", "3"))
+FACE_DETECTION_MIN_SIZE = int(os.environ.get("FACE_DETECTION_MIN_SIZE", "40"))
+FACE_SKIP_QUALITY_CHECK = os.environ.get("FACE_SKIP_QUALITY_CHECK", "1") == "1"
+FACE_ALLOW_CENTER_FALLBACK = os.environ.get("FACE_ALLOW_CENTER_FALLBACK", "0") == "1"
 
 
 
@@ -104,13 +107,80 @@ def image_to_gray_array(image_bytes):
 
 
 def detect_largest_face(gray):
-    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    detector = cv2.CascadeClassifier(cascade_path)
-    faces = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
-    if len(faces) == 0:
+    """
+    Tolerant face detection for school laptops with low-resolution cameras.
+    This version does NOT reject faces because of blur/brightness quality.
+    It first tries normal frontal detection, then relaxed frontal/profile detection.
+    """
+    if gray is None or gray.size == 0:
         return None
-    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-    face = gray[y:y + h, x:x + w]
+
+    # Improve weak laptop webcam frames without rejecting them.
+    gray = cv2.resize(gray, None, fx=1.25, fy=1.25, interpolation=cv2.INTER_LINEAR)
+    equalized = cv2.equalizeHist(gray)
+
+    cascade_names = [
+        "haarcascade_frontalface_default.xml",
+        "haarcascade_frontalface_alt.xml",
+        "haarcascade_frontalface_alt2.xml",
+        "haarcascade_profileface.xml",
+    ]
+
+    candidates = []
+    min_size = max(30, FACE_DETECTION_MIN_SIZE)
+    for cascade_name in cascade_names:
+        cascade_path = cv2.data.haarcascades + cascade_name
+        detector = cv2.CascadeClassifier(cascade_path)
+        if detector.empty():
+            continue
+
+        # Try multiple settings. minNeighbors=3 is more tolerant for weak webcams.
+        for img in (equalized, gray):
+            faces = detector.detectMultiScale(
+                img,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(min_size, min_size),
+                flags=cv2.CASCADE_SCALE_IMAGE,
+            )
+            candidates.extend(list(faces))
+
+        # Profile detector sometimes needs horizontally flipped image.
+        if cascade_name == "haarcascade_profileface.xml":
+            flipped = cv2.flip(equalized, 1)
+            faces = detector.detectMultiScale(
+                flipped,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(min_size, min_size),
+                flags=cv2.CASCADE_SCALE_IMAGE,
+            )
+            # Convert flipped x back to original coordinate space.
+            width = equalized.shape[1]
+            for x, y, w, h in faces:
+                candidates.append((width - x - w, y, w, h))
+
+    if not candidates:
+        if FACE_ALLOW_CENTER_FALLBACK:
+            h, w = gray.shape[:2]
+            side = int(min(w, h) * 0.70)
+            x = max(0, (w - side) // 2)
+            y = max(0, (h - side) // 2)
+            crop = equalized[y:y + side, x:x + side]
+            return cv2.resize(crop, (200, 200)) if crop.size else None
+        return None
+
+    x, y, w, h = max(candidates, key=lambda f: f[2] * f[3])
+
+    # Add small padding around detected face to include full facial features.
+    pad = int(0.15 * max(w, h))
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+    x2 = min(equalized.shape[1], x + w + pad)
+    y2 = min(equalized.shape[0], y + h + pad)
+    face = equalized[y1:y2, x1:x2]
+    if face.size == 0:
+        return None
     return cv2.resize(face, (200, 200))
 
 
@@ -160,11 +230,12 @@ def recognize_single_frame(image_bytes):
     captured_gray = image_to_gray_array(image_bytes)
     captured_face = detect_largest_face(captured_gray)
     if captured_face is None:
-        return None, None, "No clear face detected. Please face the camera with good lighting."
+        return None, None, "No face was detected. Please make sure your face is inside the camera frame and try again."
 
-    quality_ok, quality_message = face_quality_ok(captured_face)
-    if not quality_ok:
-        return None, None, quality_message
+    if not FACE_SKIP_QUALITY_CHECK:
+        quality_ok, quality_message = face_quality_ok(captured_face)
+        if not quality_ok:
+            return None, None, quality_message
 
     teacher_faces = collect_teacher_faces()
     if not teacher_faces:

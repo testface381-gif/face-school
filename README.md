@@ -144,3 +144,25 @@ Recommended Railway variables:
 - `FACE_REQUIRED_MATCHES=3`
 
 For best results, upload 3–5 clear photos per teacher.
+
+## Low-resolution laptop camera mode - v3
+
+This version is adjusted for weak laptop webcams:
+
+- Face quality/blurry/dark checks are disabled by default.
+- The app checks the face content instead of rejecting because the camera is low resolution.
+- Face detection is more tolerant using multiple Haar cascades and smaller face size.
+
+Recommended Railway variables:
+
+FACE_SKIP_QUALITY_CHECK=1
+FACE_DETECTION_MIN_SIZE=40
+FACE_CONFIDENCE_THRESHOLD=45
+FACE_MARGIN_THRESHOLD=12
+FACE_REQUIRED_MATCHES=3
+
+Only use this optional fallback if the laptop camera still fails to detect faces:
+
+FACE_ALLOW_CENTER_FALLBACK=1
+
+Warning: center fallback may reduce security, so keep it OFF unless needed.
