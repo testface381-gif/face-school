@@ -3,7 +3,10 @@ const canvas = document.getElementById('canvas');
 const startBtn = document.getElementById('startBtn');
 const captureBtn = document.getElementById('captureBtn');
 const result = document.getElementById('result');
+const cameraSelect = document.getElementById('cameraSelect');
 let stream = null;
+
+const CAMERA_STORAGE_KEY = 'schoolFaceAttendancePreferredCameraId';
 
 function showResult(ok, message){
   result.className = ok ? 'result ok' : 'result bad';
@@ -14,6 +17,125 @@ function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function stopCurrentStream(){
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+}
+
+function scoreCamera(device){
+  const label = (device.label || '').toLowerCase();
+  let score = 0;
+
+  // Prefer external/USB webcams.
+  if (label.includes('usb')) score += 100;
+  if (label.includes('external')) score += 90;
+  if (label.includes('webcam')) score += 40;
+  if (label.includes('logitech')) score += 80;
+  if (label.includes('1080')) score += 25;
+  if (label.includes('hd')) score += 10;
+
+  // Avoid common built-in camera labels.
+  if (label.includes('integrated')) score -= 80;
+  if (label.includes('built-in')) score -= 80;
+  if (label.includes('internal')) score -= 80;
+  if (label.includes('facetime')) score -= 80;
+  if (label.includes('hp')) score -= 20;
+
+  return score;
+}
+
+async function getVideoDevices(){
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter(d => d.kind === 'videoinput');
+}
+
+async function populateCameraList(){
+  try {
+    // Browser hides camera names until permission is granted. This temporary stream unlocks labels.
+    const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tempStream.getTracks().forEach(track => track.stop());
+
+    const cameras = await getVideoDevices();
+    const savedId = localStorage.getItem(CAMERA_STORAGE_KEY) || '';
+    const sorted = [...cameras].sort((a, b) => scoreCamera(b) - scoreCamera(a));
+
+    cameraSelect.innerHTML = '<option value="">Auto-select best camera</option>';
+    sorted.forEach((camera, index) => {
+      const option = document.createElement('option');
+      option.value = camera.deviceId;
+      option.textContent = camera.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+
+    if (savedId && sorted.some(c => c.deviceId === savedId)) {
+      cameraSelect.value = savedId;
+    } else if (sorted.length > 0) {
+      // Auto-select best-scored camera. This usually picks USB camera when connected.
+      cameraSelect.value = sorted[0].deviceId;
+      localStorage.setItem(CAMERA_STORAGE_KEY, sorted[0].deviceId);
+    }
+  } catch (error) {
+    // If permission is not granted yet, the Start button will ask again.
+  }
+}
+
+async function startCamera(){
+  stopCurrentStream();
+
+  let deviceId = cameraSelect.value || localStorage.getItem(CAMERA_STORAGE_KEY) || '';
+  let videoConstraints;
+
+  if (deviceId) {
+    videoConstraints = {
+      deviceId: { exact: deviceId },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30 }
+    };
+  } else {
+    videoConstraints = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30 }
+    };
+  }
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints,
+      audio: false
+    });
+    video.srcObject = stream;
+    captureBtn.disabled = false;
+
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings ? track.getSettings() : {};
+    if (settings.deviceId) {
+      localStorage.setItem(CAMERA_STORAGE_KEY, settings.deviceId);
+      cameraSelect.value = settings.deviceId;
+    }
+
+    showResult(true, 'Camera started. If this is not the USB camera, choose it from Camera source and press Start Camera again.');
+  } catch (error) {
+    // If exact saved device is unavailable, fall back to any camera.
+    if (deviceId) {
+      localStorage.removeItem(CAMERA_STORAGE_KEY);
+      cameraSelect.value = '';
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      captureBtn.disabled = false;
+      showResult(true, 'Saved camera was not available. Started another camera. Choose USB camera from the list if needed.');
+    } else {
+      showResult(false, 'Camera permission failed. Please allow camera access and use HTTPS.');
+    }
+  }
+}
+
 function captureFrame(){
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 480;
@@ -22,17 +144,20 @@ function captureFrame(){
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
+cameraSelect.addEventListener('change', () => {
+  if (cameraSelect.value) {
+    localStorage.setItem(CAMERA_STORAGE_KEY, cameraSelect.value);
+  } else {
+    localStorage.removeItem(CAMERA_STORAGE_KEY);
+  }
+});
+
 startBtn.addEventListener('click', async () => {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
-    video.srcObject = stream;
-    captureBtn.disabled = false;
-    showResult(true, 'Camera started. Look directly at the camera. The system will check several frames for higher accuracy.');
+    await populateCameraList();
+    await startCamera();
   } catch (error) {
-    showResult(false, 'Camera permission failed. Please allow camera access and use HTTPS.');
+    showResult(false, 'Camera permission failed. Please allow camera access and select the USB camera.');
   }
 });
 
@@ -61,3 +186,7 @@ captureBtn.addEventListener('click', async () => {
     captureBtn.disabled = false;
   }
 });
+
+// Load camera list when the page opens. If browser blocks labels before permission,
+// the list will be refreshed again when Start Camera is clicked.
+populateCameraList();

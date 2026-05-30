@@ -3,7 +3,16 @@
 <section class="camera-panel">
   <p class="eyebrow">Teacher Attendance</p>
   <h1>{{ 'Sign In' if action == 'in' else 'Sign Out' }}</h1>
-  <p class="lead">Press start camera, look directly at the laptop camera, then press verify. The system now checks multiple frames and rejects weak/uncertain matches for better safety.</p>
+  <p class="lead">Press start camera, choose the USB camera if needed, look directly at the camera, then press verify.</p>
+
+  <div class="field" style="max-width:520px;margin:0 auto 16px auto;text-align:left;">
+    <label for="cameraSelect"><strong>Camera source</strong></label>
+    <select id="cameraSelect" style="width:100%;padding:12px;border-radius:12px;border:1px solid #d0d7de;margin-top:6px;">
+      <option value="">Auto-select best camera</option>
+    </select>
+    <small style="display:block;margin-top:6px;color:#64748b;">The system will prefer USB/external cameras and remember your choice on this browser.</small>
+  </div>
+
   <div class="camera-box">
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas" hidden></canvas>
