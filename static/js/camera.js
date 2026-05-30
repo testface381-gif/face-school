@@ -137,11 +137,16 @@ async function startCamera(){
 }
 
 function captureFrame(){
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
+  // Keep upload small and stable for Railway. USB cameras can send very large frames.
+  const sourceWidth = video.videoWidth || 640;
+  const sourceHeight = video.videoHeight || 480;
+  const maxWidth = 640;
+  const scale = Math.min(1, maxWidth / sourceWidth);
+  canvas.width = Math.round(sourceWidth * scale);
+  canvas.height = Math.round(sourceHeight * scale);
   const context = canvas.getContext('2d');
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.92);
+  return canvas.toDataURL('image/jpeg', 0.72);
 }
 
 cameraSelect.addEventListener('change', () => {
@@ -164,11 +169,11 @@ startBtn.addEventListener('click', async () => {
 captureBtn.addEventListener('click', async () => {
   if (!stream) return;
   captureBtn.disabled = true;
-  showResult(true, 'Processing multiple face checks. Please keep looking at the camera...');
+  showResult(true, 'Processing secure face checks. Please keep looking at the camera...');
 
   const images = [];
   try {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       images.push(captureFrame());
       await sleep(250);
     }

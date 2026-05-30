@@ -169,3 +169,7 @@ Warning: center fallback may reduce security, so keep it OFF unless needed.
 
 ## USB Camera Selection
 This version includes a camera source selector on the attendance page. It automatically prefers USB/external cameras when available and remembers the selected camera in the browser. If the laptop camera opens first, select the USB camera from the dropdown and press **Start Camera** again.
+
+
+## v5 USB Camera Upload Fix
+This version resizes USB-camera frames before sending them to the server to prevent 413/500 errors on Railway. It also supports MAX_CONTENT_LENGTH_MB environment variable.
